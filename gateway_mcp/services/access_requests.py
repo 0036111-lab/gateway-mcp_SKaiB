@@ -6,7 +6,7 @@ from gateway_mcp.services.access_admin import (
 )
 from gateway_mcp.services.access_common import normalize_key, parse_ttl
 from gateway_mcp.services.access_packages import access_package, access_package_catalog
-from gateway_mcp.services.policy import GatewayActor
+from gateway_mcp.services.policy import GatewayActor, has_scope
 from gateway_mcp.services.storage import (
     cancel_access_request,
     claim_access_request_decision,
@@ -131,6 +131,8 @@ def admin_decide_access_request(
     reason: str,
     dry_run: bool = True,
 ) -> dict[str, Any]:
+    if not has_scope(actor, "access:admin"):
+        raise PermissionError("access:admin is required")
     normalized_id = _required(request_id, "request_id")
     normalized_decision = str(decision or "").strip().casefold()
     if normalized_decision not in {"approved", "rejected"}:
@@ -139,6 +141,10 @@ def admin_decide_access_request(
     request = get_access_request(normalized_id)
     if request is None:
         raise ValueError(f"access request not found: {normalized_id}")
+    actor_keys = set(_actor_keys(actor))
+    if any(normalize_key(request.get(key) or "") in actor_keys
+           for key in ("requester_subject", "requester_email", "subject_key")):
+        raise PermissionError("another administrator must decide this request")
     if request.get("status") != "pending":
         raise ValueError(f"access request is already {request.get('status')}")
 

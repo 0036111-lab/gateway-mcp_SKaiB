@@ -46,6 +46,7 @@ def upsert_service_connection(
     payload: dict[str, str],
     updated_by: str,
     expires_at: datetime | None,
+    expected_version: int | None = None,
 ) -> dict[str, Any]:
     if not postgres_enabled():
         raise RuntimeError("Postgres is required for managed service connections")
@@ -58,6 +59,25 @@ def upsert_service_connection(
     )
     configured_fields = sorted(normalized)
     with _connect() as conn, conn.cursor() as cur:
+        if expected_version is not None:
+            cur.execute(
+                "select pg_advisory_xact_lock(hashtextextended(%s, 0))", (system,)
+            )
+            cur.execute(
+                "select * from managed_service_connections where system = %s for update",
+                (system,),
+            )
+            previous = _connection_row(cur.fetchone(), include_payload=True)
+            if int((previous or {}).get("version", 0)) != expected_version:
+                raise ValueError("Connection changed; reload before saving")
+            expiry = expires_at.isoformat() if expires_at else None
+            if previous and (
+                previous.get("payload") == normalized
+                and previous.get("expires_at") == expiry
+                and previous.get("state") == "active"
+            ):
+                previous.pop("payload", None)
+                return previous
         cur.execute(
             """
             insert into managed_service_connections (
@@ -75,6 +95,7 @@ def upsert_service_connection(
                 last_check_ok = null,
                 last_check_message = '',
                 updated_at = now()
+            where %s::bigint is null or managed_service_connections.version = %s
             returning *
             """,
             (
@@ -84,6 +105,8 @@ def upsert_service_connection(
                 updated_by,
                 updated_by,
                 expires_at,
+                expected_version,
+                expected_version,
             ),
         )
         row = cur.fetchone()
@@ -94,7 +117,9 @@ def upsert_service_connection(
     return result
 
 
-def set_service_connection_state(system: str, *, state: str, updated_by: str) -> bool:
+def set_service_connection_state(
+    system: str, *, state: str, updated_by: str, expected_version: int | None = None
+) -> bool:
     if state not in {"active", "disabled"}:
         raise ValueError("Unknown managed service connection state")
     if not postgres_enabled():
@@ -105,9 +130,9 @@ def set_service_connection_state(system: str, *, state: str, updated_by: str) ->
             """
             update managed_service_connections
             set state = %s, version = version + 1, updated_by = %s, updated_at = now()
-            where system = %s
+            where system = %s and (%s::bigint is null or version = %s)
             """,
-            (state, updated_by, system),
+            (state, updated_by, system, expected_version, expected_version),
         )
         changed = cur.rowcount
         conn.commit()
@@ -127,7 +152,9 @@ def delete_service_connection(system: str) -> bool:
     return bool(changed)
 
 
-def record_service_connection_check(system: str, *, ok: bool, message: str) -> bool:
+def record_service_connection_check(
+    system: str, *, ok: bool, message: str, expected_version: int | None = None
+) -> bool:
     if not postgres_enabled():
         return False
     ensure_schema()
@@ -138,9 +165,9 @@ def record_service_connection_check(system: str, *, ok: bool, message: str) -> b
             update managed_service_connections
             set last_checked_at = now(), last_check_ok = %s,
                 last_check_message = %s, updated_at = now()
-            where system = %s
+            where system = %s and (%s::bigint is null or version = %s)
             """,
-            (bool(ok), safe_message, system),
+            (bool(ok), safe_message, system, expected_version, expected_version),
         )
         changed = cur.rowcount
         conn.commit()

@@ -90,6 +90,8 @@ def list_access_requests(
     status: str = "",
     package_key: str = "",
     limit: int = 100,
+    offset: int = 0,
+    query: str = "",
 ) -> list[dict[str, Any]]:
     _require_postgres()
     ensure_schema()
@@ -104,12 +106,16 @@ def list_access_requests(
     if package_key:
         where.append("package_key = %s")
         params.append(package_key)
+    if query:
+        where.append("strpos(lower(requester_subject || ' ' || requester_email || ' ' || subject_key || ' ' || id::text), lower(%s)) > 0")
+        params.append(query)
     params.append(max(1, min(int(limit), 500)))
+    params.append(max(0, int(offset)))
     sql = f"""
         select * from access_requests
         {"where " + " and ".join(where) if where else ""}
-        order by created_at desc
-        limit %s
+        order by created_at desc, id desc
+        limit %s offset %s
     """
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(sql, params)

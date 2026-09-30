@@ -4,8 +4,10 @@ import re
 from typing import Any
 
 from gateway_mcp.backends import call_backend
+from gateway_mcp.services import storage_factory
 from gateway_mcp.services.access import require_resource_access
 from gateway_mcp.services.auth import require_scope
+from gateway_mcp.services.factory_admin import public_project
 from gateway_mcp.services.factory_project_registry import (
     find_project_by_id,
     find_project_by_tracker_project,
@@ -15,7 +17,7 @@ from gateway_mcp.services.factory_project_registry import (
 )
 from gateway_mcp.services.policy import GatewayActor
 from gateway_mcp.services.managed_integrations import integration_value
-from gateway_mcp.services.work import get_work
+from gateway_mcp.services.work import _require_project_access, get_work
 
 DEFAULT_ALLOWED_ACTIONS = {
     "can_create_worktree": True,
@@ -42,6 +44,20 @@ async def discover_factory_projects(
     normalized_limit = _limit(limit)
     errors: list[dict[str, str]] = []
     projects: list[dict[str, Any]] = []
+
+    for row in storage_factory.list_projects():
+        config = row["config"]
+        if (
+            query
+            and query.casefold()
+            not in f"{row['project_id']} {config.get('name', '')} {config.get('project_path', '')}".casefold()
+        ):
+            continue
+        try:
+            _require_project_access(actor, "read", row["project_id"])
+        except PermissionError:
+            continue
+        projects.append(_stored_runtime(row))
 
     tracker_queues = await _safe_backend(
         actor=actor,
@@ -101,7 +117,8 @@ async def discover_factory_projects(
 
     discovered = _dedupe_projects(projects)[:normalized_limit]
     for project in discovered:
-        project["readiness_gaps"] = _readiness_gaps(project)
+        if project.get("source") != "registered":
+            project["readiness_gaps"] = _readiness_gaps(project)
 
     return {
         "projects": discovered,
@@ -137,6 +154,33 @@ async def resolve_factory_project_by_issue(
     tracker_project = tracker_project_identity(issue)
     registry = load_factory_project_registry()
     registered_project = find_project_by_tracker_project(registry, tracker_project)
+    if registered_project:
+        _require_project_access(
+            actor, "read", str(registered_project.get("project_id") or "").casefold()
+        )
+    if registered_project:
+        stored = storage_factory.get_project(
+            str(registered_project.get("project_id") or "")
+        )
+        if stored:
+            _require_project_access(actor, "read", stored["project_id"])
+            config = _stored_runtime(stored)
+            config["tracker_queue"] = config.get("tracker_queue") or queue
+            config["reviewer"] = config.get("reviewer") or _reviewer(issue)
+            config["issue"] = {
+                "key": issue.get("key") or issue_key,
+                "summary": summary,
+                "status": _display(issue.get("status")),
+            }
+            config["yonote_links"] = _extract_yonote_links(description)
+            config["readiness_gaps"] = list(
+                dict.fromkeys(
+                    config["readiness_gaps"]
+                    + _readiness_gaps(config, tracker_project_required=True)
+                )
+            )
+            _finalize_readiness(config)
+            return {"project": config, "errors": []}
     tracker_project_present = bool(tracker_project["id"] or tracker_project["name"])
     use_queue_fallback = (
         allow_queue_fallback
@@ -286,7 +330,52 @@ async def get_factory_runtime_config(
     project_path = str(
         contract.get("project_path") or work.get("project_path") or ""
     ).strip()
-    logical_project_id = str(work.get("project_id") or project_id).strip()
+    logical_project_id = str(work.get("project_id") or project_id).strip().casefold()
+    _require_project_access(actor, "read", logical_project_id or "*")
+    stored = storage_factory.get_project(logical_project_id)
+    if stored:
+        _require_project_access(actor, "read", logical_project_id)
+        config = _stored_runtime(stored)
+        if work.get("execution_mode") == "factory" and work.get("status") == "running":
+            from gateway_mcp.services.factory_preflight import lease_readiness_valid
+
+            if lease_readiness_valid(work, stored):
+                config["readiness_gaps"] = [
+                    gap for gap in config["readiness_gaps"] if gap != "validation_stale"
+                ]
+            else:
+                config["readiness_gaps"].append("lease_preflight_required")
+        config["work_id"] = str(work.get("work_id") or "")
+        config["scope_id"] = str(work.get("scope_id") or "")
+        if work:
+            from gateway_mcp.services.factory_git import enabled as factory_git_enabled
+
+            config["git_transport"] = {
+                "mode": "gateway" if factory_git_enabled() else "worker_managed",
+                "config_tool": "gateway_factory_git_config"
+                if factory_git_enabled()
+                else "",
+                "worker_environment_verified": False,
+            }
+            config["reviewer"] = str(
+                metadata.get("reviewer")
+                or metadata.get("reviewer_role")
+                or config.get("reviewer")
+                or ""
+            )
+            config["yonote_project_name"] = _project_context_from_work(
+                metadata, source_refs
+            ) or config.get("yonote_project_name", "")
+            config["readiness_gaps"] = list(
+                dict.fromkeys(
+                    config["readiness_gaps"]
+                    + _readiness_gaps(config, tracker_required=False)
+                )
+            )
+            if project_path and project_path != config["project_path"]:
+                config["readiness_gaps"].append("repository_mapping")
+        _finalize_readiness(config)
+        return {"project": config, "errors": []}
     registry = load_factory_project_registry()
     registered_project = find_project_by_id(registry, logical_project_id)
     # project_id is a logical Gateway id, not an implicit GitLab project key.
@@ -406,7 +495,7 @@ async def _safe_backend(
             route_name=route_name,
             arguments=arguments,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - backend failure is a readiness gap
         errors.append(
             {"route": route_name, "error": exc.__class__.__name__, "message": str(exc)}
         )
@@ -463,6 +552,30 @@ def _runtime_config(
         },
         "allowed_actions": dict(DEFAULT_ALLOWED_ACTIONS),
     }
+
+
+def _stored_runtime(row: dict[str, Any]) -> dict[str, Any]:
+    public = public_project(row)
+    config = _runtime_config(
+        project_id=public["project_id"], name=public.get("name") or public["project_id"]
+    )
+    config.update(public)
+    _finalize_readiness(config)
+    return config
+
+
+def _finalize_readiness(config: dict[str, Any]) -> None:
+    gaps = [
+        gap
+        for gap in config.get("readiness_gaps", [])
+        if gap not in {"reviewer", "yonote_project_name"}
+    ]
+    gaps.extend(_readiness_gaps(config, tracker_required=False))
+    config["readiness_gaps"] = list(dict.fromkeys(gaps))
+    config["ready"] = not config["readiness_gaps"]
+    if isinstance(config.get("validation"), dict):
+        config["validation"]["ready"] = config["ready"]
+        config["validation"]["readiness_gaps"] = config["readiness_gaps"]
 
 
 def _route_by_name(

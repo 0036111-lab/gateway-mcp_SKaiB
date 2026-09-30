@@ -136,14 +136,15 @@
       "path": "v3/issues/_search",
       "query_args": [
         "page",
-        "perPage"
+        "perPage",
+        "fields"
       ],
       "argument_aliases": {
         "per_page": "perPage"
       },
       "body_arg": "body",
       "scope": "tracker:read",
-      "description": "Search Tracker issues with Yandex Tracker Query Language. Arguments may include body={query: ...}, page, perPage.",
+      "description": "Search Tracker issues with Yandex Tracker Query Language or body={filter:{project:<id>}}. Arguments may include page, perPage, fields.",
       "status": "implemented"
     },
     {
@@ -238,6 +239,18 @@
       "body_arg": "body",
       "scope": "tracker:write",
       "description": "Execute a Tracker issue status transition. Body may include comment and transition screen fields when required.",
+      "status": "implemented"
+    },
+    {
+      "name": "tracker.projects.search",
+      "backend": "yandex-tracker",
+      "transport": "tracker-rest",
+      "http_method": "POST",
+      "path": "v3/entities/project/_search",
+      "query_args": ["page", "perPage", "fields"],
+      "body_arg": "body",
+      "scope": "tracker:read",
+      "description": "Search Tracker project entities with status, dates and responsible person.",
       "status": "implemented"
     },
     {
@@ -1173,7 +1186,13 @@
       "bitrix_method": "crm.duplicate.findbycomm",
       "scope": "bitrix24:read",
       "description": "Search Bitrix24 CRM duplicates. Use params={entity_type, type, values}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "поиск",
+        "дубликаты"
+      ]
     },
     {
       "name": "bitrix24.leads.list",
@@ -1182,7 +1201,14 @@
       "bitrix_method": "crm.lead.list",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 leads. Use params for filter/order/select/start.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "лиды",
+        "лидов",
+        "лид"
+      ]
     },
     {
       "name": "bitrix24.deals.list",
@@ -1191,7 +1217,16 @@
       "bitrix_method": "crm.deal.list",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 deals. Use params for filter/order/select/start. Supports standard fields, UF_* custom fields, CATEGORY_ID, STAGE_ID, ASSIGNED_BY_ID, CLOSED, DATE_MODIFY, OPPORTUNITY, CURRENCY_ID and pagination start.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "сделки",
+        "сделок",
+        "сделка",
+        "воронка",
+        "продажи"
+      ]
     },
     {
       "name": "bitrix24.deals.get",
@@ -1200,7 +1235,16 @@
       "bitrix_method": "crm.deal.get",
       "scope": "bitrix24:read",
       "description": "Get one Bitrix24 deal by id. Use params={id}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "сделки",
+        "сделок",
+        "сделка",
+        "воронка",
+        "продажи"
+      ]
     },
     {
       "name": "bitrix24.deals.fields",
@@ -1209,7 +1253,16 @@
       "bitrix_method": "crm.deal.fields",
       "scope": "bitrix24:read",
       "description": "Get Bitrix24 deal field metadata, including UF_* custom fields such as next step, next touch date, proposal link, contract link and discovery link.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "сделки",
+        "сделок",
+        "сделка",
+        "воронка",
+        "продажи"
+      ]
     },
     {
       "name": "bitrix24.contacts.list",
@@ -1218,7 +1271,13 @@
       "bitrix_method": "crm.contact.list",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 contacts. Use params for filter/order/select/start.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "контакты",
+        "контакт"
+      ]
     },
     {
       "name": "bitrix24.companies.list",
@@ -1227,7 +1286,15 @@
       "bitrix_method": "crm.company.list",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 companies. Use params for filter/order/select/start.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "компании",
+        "компаний",
+        "компания",
+        "контрагенты"
+      ]
     },
     {
       "name": "bitrix24.companies.get",
@@ -1236,7 +1303,15 @@
       "bitrix_method": "crm.company.get",
       "scope": "bitrix24:read",
       "description": "Get one Bitrix24 company by id. Use params={id}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "компании",
+        "компаний",
+        "компания",
+        "контрагенты"
+      ]
     },
     {
       "name": "bitrix24.companies.fields",
@@ -1245,7 +1320,15 @@
       "bitrix_method": "crm.company.fields",
       "scope": "bitrix24:read",
       "description": "Get Bitrix24 company field metadata, including WEB and UF_* custom company fields.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "компании",
+        "компаний",
+        "компания",
+        "контрагенты"
+      ]
     },
     {
       "name": "bitrix24.current_user.get",
@@ -1254,7 +1337,13 @@
       "bitrix_method": "user.current",
       "scope": "bitrix24:read",
       "description": "Get the Bitrix24 webhook user.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "пользователи",
+        "сотрудники"
+      ]
     },
     {
       "name": "bitrix24.users.list",
@@ -1263,7 +1352,13 @@
       "bitrix_method": "user.get",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 users. Use params={filter, sort, order, start}; select ID, NAME, LAST_NAME, EMAIL, ACTIVE and WORK_POSITION when available.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "пользователи",
+        "сотрудники"
+      ]
     },
     {
       "name": "bitrix24.users.get",
@@ -1272,7 +1367,13 @@
       "bitrix_method": "user.get",
       "scope": "bitrix24:read",
       "description": "Get Bitrix24 users by id/filter. Use params={ID:<user_id>} or params={filter:{ID:<user_id>}} depending on portal support.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "пользователи",
+        "сотрудники"
+      ]
     },
     {
       "name": "bitrix24.leads.create",
@@ -1281,7 +1382,33 @@
       "bitrix_method": "crm.lead.add",
       "scope": "bitrix24:write",
       "description": "Create a Bitrix24 lead. Use params={fields:{...}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "лиды",
+        "лидов",
+        "лид"
+      ]
+    },
+    {
+      "name": "bitrix24.leads.update",
+      "backend": "bitrix24",
+      "transport": "bitrix24-rest",
+      "bitrix_method": "crm.lead.update",
+      "scope": "bitrix24:write",
+      "description": "Update Bitrix24 lead fields by id. Use params={id, fields:{...}}; supports SOURCE_DESCRIPTION, TITLE, STATUS_ID, ASSIGNED_BY_ID, COMMENTS and other lead fields.",
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "лиды",
+        "лидов",
+        "лид",
+        "обновить",
+        "обновление",
+        "источник"
+      ]
     },
     {
       "name": "bitrix24.deals.create",
@@ -1290,7 +1417,16 @@
       "bitrix_method": "crm.deal.add",
       "scope": "bitrix24:write",
       "description": "Create a Bitrix24 deal. Use params={fields:{...}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "сделки",
+        "сделок",
+        "сделка",
+        "воронка",
+        "продажи"
+      ]
     },
     {
       "name": "bitrix24.companies.create",
@@ -1299,7 +1435,15 @@
       "bitrix_method": "crm.company.add",
       "scope": "bitrix24:write",
       "description": "Create a Bitrix24 company. Use params={fields:{TITLE:\"...\", WEB:[{VALUE:\"https://...\", VALUE_TYPE:\"WORK\"}], ...}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "компании",
+        "компаний",
+        "компания",
+        "контрагенты"
+      ]
     },
     {
       "name": "bitrix24.companies.update",
@@ -1308,7 +1452,15 @@
       "bitrix_method": "crm.company.update",
       "scope": "bitrix24:write",
       "description": "Update a Bitrix24 company. Use params={id:<company_id>, fields:{...}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "компании",
+        "компаний",
+        "компания",
+        "контрагенты"
+      ]
     },
     {
       "name": "bitrix24.companies.upsert",
@@ -1316,7 +1468,15 @@
       "transport": "bitrix24-rest",
       "scope": "bitrix24:write",
       "description": "Find or create/update a Bitrix24 company, normalize website into WEB, and optionally link a deal. Use params={title:\"...\", website:\"https://...\", fields:{...}, deal_id:<deal_id>, update_existing:true, create_if_missing:true}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "компании",
+        "компаний",
+        "компания",
+        "контрагенты"
+      ]
     },
     {
       "name": "bitrix24.deals.update",
@@ -1325,7 +1485,16 @@
       "bitrix_method": "crm.deal.update",
       "scope": "bitrix24:write",
       "description": "Update a Bitrix24 deal. Use params={id, fields:{...}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "сделки",
+        "сделок",
+        "сделка",
+        "воронка",
+        "продажи"
+      ]
     },
     {
       "name": "bitrix24.statuses.list",
@@ -1334,7 +1503,15 @@
       "bitrix_method": "crm.status.list",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 CRM statuses. Use params={filter:{ENTITY_ID:\"DEAL_STAGE\"}} to find deal stages.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "стадии",
+        "стадий",
+        "стадия",
+        "статусы"
+      ]
     },
     {
       "name": "bitrix24.sales_funnel.health",
@@ -1342,7 +1519,14 @@
       "transport": "bitrix24-rest",
       "scope": "bitrix24:read",
       "description": "Build sales funnel hygiene for active Bitrix24 deals. Arguments: category_id=0, include_executing=true, stale_days=7, require_next_step=true, dry_run=true, max_deals=100. Returns responsible names, last/next activity dates, next step, hygiene flags and suggested nudge text.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "воронка",
+        "продажи",
+        "гигиена"
+      ]
     },
     {
       "name": "bitrix24.timeline.comments.list",
@@ -1351,7 +1535,14 @@
       "bitrix_method": "crm.timeline.comment.list",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 CRM timeline comments. Use params={filter:{ENTITY_TYPE:\"deal\", ENTITY_ID:<deal_id>}, order, select, start}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "комментарии",
+        "таймлайн",
+        "хронология"
+      ]
     },
     {
       "name": "bitrix24.timeline.comment.add",
@@ -1360,7 +1551,14 @@
       "bitrix_method": "crm.timeline.comment.add",
       "scope": "bitrix24:write",
       "description": "Add a Bitrix24 CRM timeline comment. Use params={fields:{ENTITY_TYPE:\"deal\", ENTITY_ID:<deal_id>, COMMENT:\"...\", FILES:[[\"file.pdf\",\"base64\"]]}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "комментарии",
+        "таймлайн",
+        "хронология"
+      ]
     },
     {
       "name": "bitrix24.timeline.comment.add_with_files",
@@ -1368,7 +1566,14 @@
       "transport": "bitrix24-rest",
       "scope": "bitrix24:write",
       "description": "Add a Bitrix24 CRM timeline comment with normalized file attachments. Use params={entity_type:\"deal\", entity_id:<deal_id>, comment:\"...\", files:[{name:\"file.pdf\", content_base64:\"...\"}]}. Files are sent to crm.timeline.comment.add as FILES.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "комментарии",
+        "таймлайн",
+        "хронология"
+      ]
     },
     {
       "name": "bitrix24.deals.attach_file",
@@ -1376,7 +1581,16 @@
       "transport": "bitrix24-rest",
       "scope": "bitrix24:write",
       "description": "Attach one or more base64 files to a deal timeline comment. Use params={deal_id:<deal_id>, comment:\"...\", files:[{name:\"proposal.pdf\", content_base64:\"...\"}]}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "сделки",
+        "сделок",
+        "сделка",
+        "воронка",
+        "продажи"
+      ]
     },
     {
       "name": "bitrix24.disk.folder.uploadfile",
@@ -1385,7 +1599,13 @@
       "bitrix_method": "disk.folder.uploadfile",
       "scope": "bitrix24:write",
       "description": "Upload a file to a Bitrix24 Drive folder. Use params={id:<folder_id>, data:{NAME:\"file.pdf\"}, fileContent:[\"file.pdf\",\"base64\"]}. Requires disk/drive permission on the Bitrix webhook.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "файлы",
+        "диск"
+      ]
     },
     {
       "name": "bitrix24.disk.storage.uploadfile",
@@ -1394,7 +1614,13 @@
       "bitrix_method": "disk.storage.uploadfile",
       "scope": "bitrix24:write",
       "description": "Upload a file to the root of a Bitrix24 Drive storage. Use params={id:<storage_id>, data:{NAME:\"file.pdf\"}, fileContent:[\"file.pdf\",\"base64\"]}. Requires disk/drive permission on the Bitrix webhook.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "файлы",
+        "диск"
+      ]
     },
     {
       "name": "bitrix24.activities.list",
@@ -1403,7 +1629,15 @@
       "bitrix_method": "crm.activity.list",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 CRM activities. Use params={filter:{OWNER_TYPE_ID, OWNER_ID, RESPONSIBLE_ID, COMPLETED, DEADLINE}, order, select, start}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "активности",
+        "активность",
+        "касание",
+        "касания"
+      ]
     },
     {
       "name": "bitrix24.activities.add",
@@ -1412,7 +1646,15 @@
       "bitrix_method": "crm.activity.add",
       "scope": "bitrix24:write",
       "description": "Create a Bitrix24 CRM activity/follow-up. Use params={fields:{OWNER_TYPE_ID, OWNER_ID, TYPE_ID, SUBJECT, DESCRIPTION, RESPONSIBLE_ID, DEADLINE, COMPLETED}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "активности",
+        "активность",
+        "касание",
+        "касания"
+      ]
     },
     {
       "name": "bitrix24.activities.update",
@@ -1421,7 +1663,15 @@
       "bitrix_method": "crm.activity.update",
       "scope": "bitrix24:write",
       "description": "Update a Bitrix24 CRM activity. Use params={id:<activity_id>, fields:{...}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "активности",
+        "активность",
+        "касание",
+        "касания"
+      ]
     },
     {
       "name": "bitrix24.tasks.list",
@@ -1430,7 +1680,14 @@
       "bitrix_method": "tasks.task.list",
       "scope": "bitrix24:read",
       "description": "List Bitrix24 tasks. Use params={filter, select, order, start}. CRM-linked tasks can use UF_CRM_TASK values such as D_<deal_id>.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "задачи",
+        "задач",
+        "задача"
+      ]
     },
     {
       "name": "bitrix24.tasks.add",
@@ -1439,7 +1696,14 @@
       "bitrix_method": "tasks.task.add",
       "scope": "bitrix24:write",
       "description": "Create a Bitrix24 task for a responsible user. Use params={fields:{TITLE, DESCRIPTION, RESPONSIBLE_ID, DEADLINE, UF_CRM_TASK:[\"D_<deal_id>\"]}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "задачи",
+        "задач",
+        "задача"
+      ]
     },
     {
       "name": "bitrix24.tasks.update",
@@ -1448,7 +1712,14 @@
       "bitrix_method": "tasks.task.update",
       "scope": "bitrix24:write",
       "description": "Update a Bitrix24 task. Use params={taskId:<task_id>, fields:{...}}.",
-      "status": "implemented"
+      "status": "implemented",
+      "keywords": [
+        "битрикс",
+        "битрикс24",
+        "задачи",
+        "задач",
+        "задача"
+      ]
     },
     {
       "name": "telegram.messages.search",
@@ -1555,7 +1826,25 @@
       "transport": "yandex-mail",
       "operation": "mark_read",
       "scope": "mail:write",
-      "description": "Mark one Yandex Mail message as read (set the \\Seen IMAP flag) via IMAP XOAUTH2 using the logged-in user's OAuth token. Use params={mailbox:'INBOX', id:'<id from mail.messages.search>'}. Read-only fetching never flips flags, so transcript/file-processing workflows should call this after a message is fully handled.",
+      "description": "Update the \\Seen IMAP flag of one Yandex Mail message via IMAP XOAUTH2 using the logged-in user's OAuth token. By default marks the message as read; set unread=true to mark it as unread instead. Use params={mailbox:'INBOX', id:'<id from mail.messages.search>'}. Read-only fetching never flips flags, so transcript/file-processing workflows should call this after a message is fully handled.",
+      "status": "implemented"
+    },
+    {
+      "name": "mail.folders.list",
+      "backend": "yandex-mail",
+      "transport": "yandex-mail",
+      "operation": "list_folders",
+      "scope": "mail:read",
+      "description": "List Yandex Mail folders (IMAP LIST) using the logged-in user's OAuth token. Returns each folder's decoded name (custom folder names arrive as IMAP modified UTF-7 and are decoded here), the raw IMAP name, the hierarchy delimiter, and flags. Use the decoded name as the destination for mail.messages.move.",
+      "status": "implemented"
+    },
+    {
+      "name": "mail.messages.move",
+      "backend": "yandex-mail",
+      "transport": "yandex-mail",
+      "operation": "move_message",
+      "scope": "mail:write",
+      "description": "Move one Yandex Mail message to another folder via IMAP COPY + \\Deleted + EXPUNGE using the logged-in user's OAuth token. Required: id (from mail.messages.search) and destination (folder name from mail.folders.list, e.g. a custom folder; non-ASCII names are UTF-7 encoded and quoted automatically). Message flags such as unread state are preserved.",
       "status": "implemented"
     },
     {
@@ -1779,6 +2068,15 @@
       ],
       "scope": "wordstat:read",
       "description": "Yandex Wordstat: tree of supported regions with ids, for use as regions in other wordstat routes.",
+      "status": "implemented"
+    },
+    {
+      "name": "calendar.events.create",
+      "backend": "caldav",
+      "transport": "caldav",
+      "operation": "create_event",
+      "scope": "calendar:write",
+      "description": "Create a calendar event (meeting/call). Arguments: calendar_index (from calendar.calendars.list), summary (required), start, end (ISO datetime), description, location, attendee (email). Returns the created event.",
       "status": "implemented"
     }
   ]

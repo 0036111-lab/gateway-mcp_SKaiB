@@ -80,6 +80,9 @@ ACTIVE_SESSIONS = Gauge(
 )
 
 SENSITIVE_KEYS = {
+    "credential",
+    "connection_id",
+    "connection_handle",
     "authorization",
     "cookie",
     "password",

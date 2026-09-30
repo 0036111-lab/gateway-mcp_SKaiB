@@ -8,6 +8,7 @@ install_dependency_stubs()
 from gateway_mcp.services.policy import GatewayActor
 from gateway_mcp.services.work import (
     accept_work,
+    claim_work,
     complete_work,
     intake_work,
     record_artifact_manifest,
@@ -18,6 +19,20 @@ from gateway_mcp.services.work import (
 
 
 class WorkServiceTests(unittest.TestCase):
+    def test_claim_does_not_write_a_second_non_atomic_admission(self):
+        actor = GatewayActor(subject="worker")
+        row = {"work_id": "work-1", "project_id": "demo", "status": "running"}
+        with (
+            patch("gateway_mcp.services.work._require_project_access"),
+            patch(
+                "gateway_mcp.services.work.storage_work.claim_work_run",
+                return_value=row,
+            ),
+            patch("gateway_mcp.services.work.storage_work.insert_work_event") as insert,
+        ):
+            self.assertEqual(claim_work(actor=actor, project_id="demo"), row)
+        insert.assert_not_called()
+
     def test_generic_event_cannot_bypass_artifact_chain_validation(self) -> None:
         actor = GatewayActor(subject="service:factory")
         running = {"work_id": "work-1", "project_id": "demo", "status": "running"}

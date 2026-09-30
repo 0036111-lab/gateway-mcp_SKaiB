@@ -8,22 +8,24 @@ from gateway_mcp.backends.common import (
     BackendConfigError,
     BackendRouteError,
     _bool_env,
-    _clean_args,
-    _env,
-    _format_path,
-    _json_or_text,
-    _route_body,
-    _route_params,
     _yandex_user_token,
 )
 from gateway_mcp.services.managed_integrations import integration_value
 
 
-def _tracker_headers() -> dict[str, str]:
+def _tracker_headers(actor_subject: str | None = None) -> dict[str, str]:
     iam_token = os.getenv("TRACKER_IAM_TOKEN", "")
 
     try:
-        token = _yandex_user_token()
+        if actor_subject is None:
+            token = _yandex_user_token()
+        else:
+            from gateway_mcp.services.storage import get_user_oauth_token
+
+            credential = get_user_oauth_token("yandex", actor_subject)
+            token = str((credential or {}).get("access_token") or "")
+            if not token:
+                raise BackendConfigError("No Yandex OAuth token for current user. Open /credentials.")
         authorization = f"OAuth {token}"
     except BackendConfigError:
         if not (_bool_env("GATEWAY_ALLOW_SERVER_YANDEX_TOKENS", False) and iam_token):
@@ -90,7 +92,9 @@ def _route_body(route: dict[str, Any], arguments: dict[str, Any]) -> dict[str, A
     }
 
 
-async def _call_tracker(route: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
+async def _call_tracker(
+    route: dict[str, Any], arguments: dict[str, Any], *, actor_subject: str | None = None
+) -> dict[str, Any]:
     http_method = str(route.get("http_method", "GET")).upper()
     path = _format_path(str(route.get("path", "")), arguments)
     if not path:
@@ -124,7 +128,7 @@ async def _call_tracker(route: dict[str, Any], arguments: dict[str, Any]) -> dic
         response = await client.request(
             http_method,
             url,
-            headers=_tracker_headers(),
+            headers=_tracker_headers(actor_subject),
             params=params or None,
             json=body if http_method in {"POST", "PATCH", "PUT"} else None,
         )
@@ -138,6 +142,7 @@ async def _call_tracker(route: dict[str, Any], arguments: dict[str, Any]) -> dic
         except ValueError:
             data = text
 
+    response_headers = getattr(response, "headers", {})
     return {
         "ok": response.is_success,
         "status": response.status_code,
@@ -145,4 +150,6 @@ async def _call_tracker(route: dict[str, Any], arguments: dict[str, Any]) -> dic
         "method": http_method,
         "path": path,
         "data": data,
+        "total_count": response_headers.get("X-Total-Count"),
+        "total_pages": response_headers.get("X-Total-Pages"),
     }

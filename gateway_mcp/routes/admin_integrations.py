@@ -133,17 +133,23 @@ def register_admin_integration_routes(mcp) -> None:
         active_count = sum(
             1 for status in statuses if str(status.get("state")) == "active"
         )
-        issue_count = len(statuses) - active_count
-        checked_count = sum(1 for status in statuses if status.get("last_checked_at"))
+        issue_count = sum(
+            1
+            for status in statuses
+            if status.get("state") == "expired" or status.get("last_check_ok") is False
+        )
+        checked_count = sum(
+            1 for status in statuses if status.get("last_check_ok") is True
+        )
         body = f"""
         <div class="page-head"><div><h1>Интеграции</h1>
-        <p class="lead">Подключения GatewayMCP к корпоративным системам. Секреты хранятся зашифрованно и не передаются агентам.</p></div></div>
+        <p class="lead">Подключения GatewayMCP к корпоративным системам. Секреты хранятся зашифрованно и не передаются агентам.</p></div><a class="button secondary" href="/admin/factory/connections">GitLab для фабрики</a></div>
         {_banner(request)}
         <section class="integration-summary" aria-label="Состояние интеграций">
           {_summary_item("Всего систем", len(statuses))}
-          {_summary_item("Подключено", active_count, "ok")}
+          {_summary_item("Настроено", active_count, "ok")}
           {_summary_item("Требуют внимания", issue_count, "warning" if issue_count else "ok")}
-          {_summary_item("Проверено", checked_count)}
+          {_summary_item("Работают после проверки", checked_count)}
         </section>
         <section class="integration-list" aria-label="Корпоративные интеграции">
           {"".join(_integration_card(status, csrf) for status in statuses)}
@@ -275,16 +281,26 @@ def _integration_card(status: dict[str, object], csrf: str) -> str:
             f'name="{escape(field.key)}" value="{escape(value)}" placeholder="{escape(placeholder)}" autocomplete="off"></label>{clear}'
             "</div>"
         )
-    status_class = {
-        "active": "ok",
-        "expired": "warning",
-        "disabled": "missing",
-    }.get(state, "missing")
-    status_label = {
-        "active": "подключено",
-        "disabled": "отключено",
-        "expired": "срок истёк",
-    }.get(state, "не настроено")
+    check_failed = status.get("last_check_ok") is False
+    status_class = (
+        "warning"
+        if state == "expired" or check_failed
+        else "ok"
+        if state == "active"
+        else "neutral"
+    )
+    status_label = (
+        "срок истёк"
+        if state == "expired"
+        else "ошибка проверки"
+        if check_failed
+        else {
+            "active": "работает"
+            if status.get("last_check_ok") is True
+            else "настроено",
+            "disabled": "отключено",
+        }.get(state, "не настроено")
+    )
     checked = str(status.get("last_check_message") or "")
     checked_at = (
         escape(fmt_time(status.get("last_checked_at")))
@@ -295,7 +311,7 @@ def _integration_card(status: dict[str, object], csrf: str) -> str:
         f'<p class="integration-check-note">{escape(checked)}</p>' if checked else ""
     )
     return f"""
-    <details class="integration-item">
+    <details class="integration-item" id="integration-{escape(system)}">
       <summary class="integration-row">
         <span class="integration-primary">
           <span class="integration-name">{escape(definition.label)}</span>

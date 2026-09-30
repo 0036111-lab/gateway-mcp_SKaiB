@@ -35,6 +35,80 @@ def _is_bounce(sender: str, subject: str) -> bool:
     return any(m in s for m in _BOUNCE_FROM_MARKERS) or any(m in subj for m in _BOUNCE_SUBJECT_MARKERS)
 
 
+def _imap_utf7_encode(value: str) -> str:
+    """Encode to IMAP modified UTF-7 (RFC 3501 section 5.1.3) for mailbox names."""
+    out: list[str] = []
+    pending: list[str] = []
+
+    def flush() -> None:
+        if not pending:
+            return
+        chunk = "".join(pending).encode("utf-16-be")
+        out.append("&" + base64.b64encode(chunk).decode("ascii").rstrip("=").replace("/", ",") + "-")
+        pending.clear()
+
+    for ch in value:
+        if 0x20 <= ord(ch) <= 0x7E:
+            flush()
+            out.append("&-" if ch == "&" else ch)
+        else:
+            pending.append(ch)
+    flush()
+    return "".join(out)
+
+
+def _imap_utf7_decode(value: str) -> str:
+    out: list[str] = []
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch != "&":
+            out.append(ch)
+            i += 1
+            continue
+        end = value.find("-", i + 1)
+        if end < 0:
+            out.append(ch)
+            break
+        b64 = value[i + 1 : end].replace(",", "/")
+        if not b64:
+            out.append("&")
+        else:
+            padded = b64 + "=" * (-len(b64) % 4)
+            out.append(base64.b64decode(padded).decode("utf-16-be"))
+        i = end + 1
+    return "".join(out)
+
+
+def _imap_mailbox_literal(name: str) -> str:
+    """Quote a mailbox name for IMAP commands, encoding non-ASCII as modified UTF-7."""
+    encoded = name if all(ord(ch) < 0x80 for ch in name) else _imap_utf7_encode(name)
+    escaped = encoded.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _imap_select_name(mailbox: str) -> str:
+    """SELECT/EXAMINE argument: plain atom when simple ASCII, quoted UTF-7 literal otherwise."""
+    if mailbox and all(0x20 < ord(ch) < 0x7F for ch in mailbox) and '"' not in mailbox:
+        return mailbox
+    return _imap_mailbox_literal(mailbox)
+
+
+def _parse_imap_list_line(line: str) -> dict[str, Any] | None:
+    match = re.match(r'\((?P<flags>[^)]*)\)\s+(?:"(?P<delimiter>[^"]*)"\s+|NIL\s+)(?P<name>.+)$', line.strip())
+    if not match:
+        return None
+    raw_name = match.group("name").strip()
+    if len(raw_name) >= 2 and raw_name.startswith('"') and raw_name.endswith('"'):
+        raw_name = raw_name[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    return {
+        "name": _imap_utf7_decode(raw_name),
+        "raw_name": raw_name,
+        "delimiter": match.group("delimiter") or "",
+        "flags": (match.group("flags") or "").split(),
+    }
+
+
 def _decode_payload(part: Any) -> str:
     payload = part.get_payload(decode=True)
     if isinstance(payload, bytes):
@@ -64,7 +138,7 @@ def _mail_search_sync(arguments: dict[str, Any], username: str, token: str) -> d
     imap = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
     try:
         imap.authenticate("XOAUTH2", lambda _: _xoauth2_string(username, token).encode("utf-8"))
-        status, _ = imap.select(mailbox, readonly=True)
+        status, _ = imap.select(_imap_select_name(mailbox), readonly=True)
         if status != "OK":
             raise BackendRouteError(f"Unable to open mailbox: {mailbox}")
         status, data = imap.search(None, "UNSEEN" if unseen_only else "ALL")
@@ -138,7 +212,7 @@ def _mail_get_sync(arguments: dict[str, Any], username: str, token: str) -> dict
     imap = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
     try:
         imap.authenticate("XOAUTH2", lambda _: _xoauth2_string(username, token).encode("utf-8"))
-        status, _ = imap.select(mailbox, readonly=True)
+        status, _ = imap.select(_imap_select_name(mailbox), readonly=True)
         if status != "OK":
             raise BackendRouteError(f"Unable to open mailbox: {mailbox}")
         status, fetched = imap.fetch(message_id, "(RFC822)")
@@ -228,16 +302,98 @@ def _mail_mark_read_sync(arguments: dict[str, Any], username: str, token: str) -
     imap = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
     try:
         imap.authenticate("XOAUTH2", lambda _: _xoauth2_string(username, token).encode("utf-8"))
-        status, _ = imap.select(mailbox, readonly=False)
+        status, _ = imap.select(_imap_select_name(mailbox), readonly=False)
         if status != "OK":
             raise BackendRouteError(f"Unable to open mailbox: {mailbox}")
-        status, _ = imap.store(message_id, "+FLAGS.SILENT", "(\\Seen)")
+        unread = bool(arguments.get("unread", False))
+        if unread:
+            status, _ = imap.store(message_id, "-FLAGS.SILENT", "(\\Seen)")
+            flags: list[str] = []
+        else:
+            status, _ = imap.store(message_id, "+FLAGS.SILENT", "(\\Seen)")
+            flags = ["\\Seen"]
         if status != "OK":
-            raise BackendRouteError(f"Unable to mark message as read: {message_id}")
+            raise BackendRouteError(f"Unable to update \\Seen flag: {message_id}")
         return {
             "ok": True,
             "backend": "yandex-mail",
-            "data": {"mailbox": mailbox, "id": message_id, "flags_set": ["\\Seen"]},
+            "data": {"mailbox": mailbox, "id": message_id, "flags_set": flags, "unread": unread},
+        }
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
+
+
+def _mail_list_folders_sync(arguments: dict[str, Any], username: str, token: str) -> dict[str, Any]:
+    import imaplib
+
+    host = os.getenv("YANDEX_MAIL_IMAP_HOST", "imap.yandex.com")
+    port = int(os.getenv("YANDEX_MAIL_IMAP_PORT", "993"))
+
+    imap = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
+    try:
+        imap.authenticate("XOAUTH2", lambda _: _xoauth2_string(username, token).encode("utf-8"))
+        status, lines = imap.list()
+        if status != "OK":
+            raise BackendRouteError("Unable to list mail folders")
+        folders: list[dict[str, Any]] = []
+        for line in lines or []:
+            text = line.decode("utf-8", errors="replace") if isinstance(line, (bytes, bytearray)) else str(line)
+            entry = _parse_imap_list_line(text)
+            if entry:
+                folders.append(entry)
+        return {"ok": True, "backend": "yandex-mail", "data": {"count": len(folders), "folders": folders}}
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
+
+
+def _mail_move_sync(arguments: dict[str, Any], username: str, token: str) -> dict[str, Any]:
+    import imaplib
+
+    host = os.getenv("YANDEX_MAIL_IMAP_HOST", "imap.yandex.com")
+    port = int(os.getenv("YANDEX_MAIL_IMAP_PORT", "993"))
+    mailbox = str(arguments.get("mailbox") or "INBOX")
+    message_id = str(arguments.get("id") or "").strip()
+    if not message_id:
+        raise BackendRouteError("mail.messages.move requires 'id'")
+    destination = str(arguments.get("destination") or "").strip()
+    if not destination:
+        raise BackendRouteError("mail.messages.move requires 'destination' (folder name, see mail.folders.list)")
+
+    imap = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
+    try:
+        imap.authenticate("XOAUTH2", lambda _: _xoauth2_string(username, token).encode("utf-8"))
+        status, _ = imap.select(_imap_select_name(mailbox), readonly=False)
+        if status != "OK":
+            raise BackendRouteError(f"Unable to open mailbox: {mailbox}")
+        status, _ = imap.copy(message_id, _imap_mailbox_literal(destination))
+        if status != "OK":
+            raise BackendRouteError(f"Unable to copy message {message_id} to folder: {destination}")
+        status, _ = imap.store(message_id, "+FLAGS.SILENT", "(\\Deleted)")
+        if status != "OK":
+            raise BackendRouteError(f"Unable to flag copied message as deleted: {message_id}")
+        expunged = True
+        try:
+            imap.expunge()
+        except imaplib.IMAP4.error:
+            # Copy and the \\Deleted flag already succeeded; some servers only
+            # expunge on logout, the message is gone from the source view anyway.
+            expunged = False
+        return {
+            "ok": True,
+            "backend": "yandex-mail",
+            "data": {
+                "mailbox": mailbox,
+                "id": message_id,
+                "destination": destination,
+                "moved": True,
+                "expunged": expunged,
+            },
         }
     finally:
         try:
@@ -289,6 +445,10 @@ async def _call_yandex_mail(route: dict[str, Any], arguments: dict[str, Any]) ->
         return await asyncio.to_thread(_mail_get_sync, arguments, username, token)
     if operation == "mark_read":
         return await asyncio.to_thread(_mail_mark_read_sync, arguments, username, token)
+    if operation == "list_folders":
+        return await asyncio.to_thread(_mail_list_folders_sync, arguments, username, token)
+    if operation == "move_message":
+        return await asyncio.to_thread(_mail_move_sync, arguments, username, token)
     if operation == "send_message":
         return await asyncio.to_thread(_mail_send_sync, arguments, username, token)
     raise BackendRouteError(f"Unsupported Yandex Mail operation: {operation or '<missing>'}")

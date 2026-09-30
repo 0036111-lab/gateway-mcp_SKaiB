@@ -181,6 +181,12 @@ def save_integration(
     if unknown:
         raise ValueError(f"Unknown integration fields: {', '.join(sorted(unknown))}")
     existing = get_service_connection(definition.key, include_payload=True)
+    if system == "gitlab" and ((existing or {}).get("payload") or {}).get(
+        "GITLAB_TOKEN"
+    ):
+        raise ValueError(
+            "Служебное подключение GitLab изменяется в разделе «GitLab для фабрики»."
+        )
     current = {
         key: str(value)
         for key, value in dict((existing or {}).get("payload") or {}).items()
@@ -198,6 +204,9 @@ def save_integration(
         payload=current,
         updated_by=updated_by,
         expires_at=expires_at,
+        expected_version=int((existing or {}).get("version", 0))
+        if system == "gitlab"
+        else None,
     )
     invalidate_integration_cache(definition.key)
     return result
@@ -221,6 +230,10 @@ def delete_integration(system: str) -> bool:
 
 async def check_integration(system: str) -> dict[str, Any]:
     definition = integration_definition(system)
+    if system == "gitlab":
+        from gateway_mcp.services.factory_connections import check_connection
+
+        return await check_connection("gitlab")
     try:
         result = await _run_check(definition.key)
     except Exception as exc:  # noqa: BLE001 - health checks must not break the admin page
@@ -375,6 +388,10 @@ def _payload_valid(
 
 
 async def _run_check(system: str) -> dict[str, Any]:
+    if system == "gitlab":
+        from gateway_mcp.services.factory_connections import check_connection
+
+        return await check_connection("gitlab")
     if system == "tracker":
         return {
             "ok": True,
@@ -418,9 +435,6 @@ async def _run_check(system: str) -> dict[str, Any]:
                     "Authorization": f"Bearer {integration_value(system, 'GATEWAY_LLM_UPSTREAM_API_KEY')}"
                 },
             )
-        elif system == "gitlab":
-            base = integration_value(system, "GITLAB_API_BASE_URL").rstrip("/")
-            response = await client.get(f"{base}/version")
         elif system == "telegram":
             token = integration_value(system, "TELEGRAM_BOT_TOKEN")
             response = await client.get(f"https://api.telegram.org/bot{token}/getMe")

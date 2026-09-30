@@ -159,6 +159,51 @@ def audit_event_summary(
     return [_audit_row(row) for row in rows]
 
 
+def gateway_activity_metrics(*, days: int = 30) -> dict[str, Any]:
+    if not postgres_enabled():
+        raise RuntimeError("GATEWAY_DATABASE_URL is required for gateway activity metrics")
+
+    ensure_schema()
+    period = max(1, min(int(days), 365))
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select
+                    count(*) filter (where event = 'tool_call') as tool_calls,
+                    count(*) filter (where event = 'tool_call' and status = 'error') as tool_errors,
+                    count(*) filter (where event = 'tool_call' and status = 'denied') as tool_denials,
+                    count(distinct actor_subject) filter (
+                        where event = 'tool_call' and actor_subject <> ''
+                    ) as active_actors,
+                    count(*) filter (where event = 'login' and status = 'ok') as logins
+                from audit_events
+                where created_at >= now() - (%s::text || ' days')::interval
+                """,
+                (period,),
+            )
+            totals = cur.fetchone() or {}
+            cur.execute(
+                """
+                select
+                    tool,
+                    system,
+                    count(*) as calls,
+                    count(*) filter (where status = 'error') as errors,
+                    count(*) filter (where status = 'denied') as denials
+                from audit_events
+                where event = 'tool_call'
+                  and created_at >= now() - (%s::text || ' days')::interval
+                group by tool, system
+                order by count(*) desc, tool
+                limit 20
+                """,
+                (period,),
+            )
+            routes = cur.fetchall()
+    return {"days": period, "totals": dict(totals), "routes": [dict(row) for row in routes]}
+
+
 def _audit_row(row: dict[str, Any] | None) -> dict[str, Any]:
     if not row:
         return {}

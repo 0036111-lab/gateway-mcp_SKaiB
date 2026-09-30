@@ -148,6 +148,26 @@ def claim_work_run(
                 params,
             )
             row = cur.fetchone()
+            if row:
+                # Lease admission must commit with the lease, including retries
+                # by the same worker after an earlier lease expired.
+                cur.execute(
+                    """insert into work_events
+                    (work_id, actor_subject, event_type, payload)
+                    values (%s, %s, 'claimed', %s::jsonb)""",
+                    (
+                        row["work_id"],
+                        claimed_by,
+                        _json(
+                            {
+                                "lease_seconds": max(
+                                    60, min(int(lease_seconds), 86400)
+                                ),
+                                "lease_expires_at": str(row["lease_expires_at"]),
+                            }
+                        ),
+                    ),
+                )
         conn.commit()
     return _row(row) if row else None
 
@@ -249,6 +269,67 @@ def transition_work_run(
             event_row = cur.fetchone()
         conn.commit()
     return _row(work_row), _row(event_row)
+
+
+def latest_work_claim(work_id: str) -> dict[str, Any] | None:
+    """Read server-issued lease admission, not user-supplied event metadata."""
+    _require_postgres()
+    ensure_schema()
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """select actor_subject, occurred_at, payload from work_events
+            where work_id = %s and event_type = 'claimed'
+            order by occurred_at desc, id desc limit 1""",
+            (work_id,),
+        )
+        row = cur.fetchone()
+    return _row(row) if row else None
+
+
+def latest_factory_preflight(work_id: str) -> dict[str, Any] | None:
+    _require_postgres()
+    ensure_schema()
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """select actor_subject, occurred_at, payload from work_events
+            where work_id = %s and event_type = 'factory_preflight'
+            order by occurred_at desc, id desc limit 1""",
+            (work_id,),
+        )
+        row = cur.fetchone()
+    return _row(row) if row else None
+
+
+def block_claim_preflight(work: dict, gaps: list[str]) -> dict | None:
+    _require_postgres()
+    ensure_schema()
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """update work_runs set status = 'blocked', updated_at = now()
+            where work_id = %s and status = 'running' and claimed_by = %s
+            and lease_expires_at = %s::timestamptz returning *""",
+            (work["work_id"], work["claimed_by"], work["lease_expires_at"]),
+        )
+        row = cur.fetchone()
+        if row:
+            cur.execute(
+                """insert into work_events (work_id, actor_subject, event_type, payload)
+                values (%s, %s, 'blocked', %s::jsonb)""",
+                (
+                    work["work_id"],
+                    work["claimed_by"],
+                    _json(
+                        {
+                            "phase": "preflight",
+                            "stop_code": "READINESS_GAPS",
+                            "readiness_gaps": gaps,
+                            "repository_actions_taken": False,
+                        }
+                    ),
+                ),
+            )
+        conn.commit()
+    return _row(row) if row else None
 
 
 def insert_work_event(
@@ -379,6 +460,54 @@ def work_metrics(*, project_id: str = "", days: int = 30) -> list[dict[str, Any]
                 where {" and ".join(where)}
                 group by execution_mode
                 order by execution_mode
+                """,
+                params,
+            )
+            rows = cur.fetchall()
+    return [_row(row) for row in rows]
+
+
+def work_project_metrics(*, project_id: str = "", days: int = 30) -> list[dict[str, Any]]:
+    _require_postgres()
+    ensure_schema()
+    where = ["created_at >= now() - (%s::text || ' days')::interval"]
+    params: list[Any] = [max(1, min(int(days), 365))]
+    if project_id:
+        where.append("project_id = %s")
+        params.append(project_id)
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                select
+                    project_id,
+                    count(*) as runs,
+                    count(*) filter (where status = 'accepted') as accepted_runs,
+                    count(*) filter (where status = 'blocked') as blocked_runs,
+                    count(*) filter (
+                        where status in ('queued', 'running', 'review', 'completed')
+                    ) as open_runs,
+                    count(*) filter (
+                        where status = 'accepted' and correction_rounds = 0
+                    ) as first_pass_runs,
+                    percentile_cont(0.5) within group (
+                        order by extract(epoch from (first_verified_at - signal_at))
+                    ) filter (where first_verified_at is not null) as p50_signal_to_verified_seconds,
+                    percentile_cont(0.5) within group (
+                        order by extract(epoch from (accepted_at - signal_at))
+                    ) filter (where accepted_at is not null) as p50_signal_to_accepted_seconds,
+                    percentile_cont(0.5) within group (
+                        order by correction_rounds
+                    ) filter (where accepted_at is not null) as p50_correction_rounds,
+                    max(extract(epoch from (now() - updated_at))) filter (
+                        where status = 'blocked'
+                    ) as oldest_blocked_seconds,
+                    max(updated_at) as last_activity_at
+                from work_runs
+                where {' and '.join(where)}
+                group by project_id
+                order by count(*) desc, project_id
+                limit 200
                 """,
                 params,
             )

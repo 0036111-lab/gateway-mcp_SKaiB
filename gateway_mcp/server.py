@@ -1,9 +1,17 @@
 from gateway_mcp.mcp_runtime import create_server
+from gateway_mcp.routes.admin_access import register_admin_access_routes
 from gateway_mcp.routes.admin_audit import register_admin_audit_routes
+from gateway_mcp.routes.admin_factory_connections import (
+    register_admin_factory_connection_routes,
+)
 from gateway_mcp.routes.admin_integrations import register_admin_integration_routes
+from gateway_mcp.routes.admin_metrics import register_admin_metrics_routes
+from gateway_mcp.routes.admin_showcase import register_admin_showcase_routes
 from gateway_mcp.routes.admin_telemetry import register_admin_telemetry_routes
+from gateway_mcp.routes.admin_user_roles import register_admin_user_role_routes
 from gateway_mcp.routes.auth import register_auth_routes
 from gateway_mcp.routes.credentials import register_credentials_routes
+from gateway_mcp.routes.factory_git import register_factory_git_routes
 from gateway_mcp.routes.file_transfers import register_file_transfer_routes
 from gateway_mcp.routes.health import register_health_routes
 from gateway_mcp.routes.llm_proxy import register_llm_proxy_routes
@@ -38,10 +46,16 @@ def create_mcp():
     register_auth_routes(server)
     register_credentials_routes(server)
     register_file_transfer_routes(server)
+    register_factory_git_routes(server)
     register_llm_proxy_routes(server)
     register_notification_routes(server)
     register_admin_audit_routes(server)
+    register_admin_access_routes(server)
+    register_admin_user_role_routes(server)
+    register_admin_showcase_routes(server)
     register_admin_integration_routes(server)
+    register_admin_metrics_routes(server)
+    register_admin_factory_connection_routes(server)
     register_admin_telemetry_routes(server)
     register_company_tools(server)
     register_memory_tools(server)

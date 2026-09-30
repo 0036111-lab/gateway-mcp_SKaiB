@@ -104,6 +104,7 @@ class GatewayStructureTests(unittest.TestCase):
             "bitrix24.activities.list": ("crm.activity.list", "bitrix24:read"),
             "bitrix24.activities.add": ("crm.activity.add", "bitrix24:write"),
             "bitrix24.activities.update": ("crm.activity.update", "bitrix24:write"),
+            "bitrix24.leads.update": ("crm.lead.update", "bitrix24:write"),
             "bitrix24.tasks.list": ("tasks.task.list", "bitrix24:read"),
             "bitrix24.tasks.add": ("tasks.task.add", "bitrix24:write"),
             "bitrix24.tasks.update": ("tasks.task.update", "bitrix24:write"),
@@ -234,6 +235,21 @@ class GatewayStructureTests(unittest.TestCase):
                 self.assertEqual(route["transport"], "yonote-rpc")
                 self.assertEqual(route["rpc_method"], "v2/database/transaction")
                 self.assertEqual(route["scope"], "yonote:write")
+
+    def test_yandex_mail_folder_routes_are_declared(self) -> None:
+        registry = json.loads((ROOT / "gateway-tools.json").read_text(encoding="utf-8"))
+        routes = {str(item.get("name")): item for item in registry.get("tools", [])}
+        expected = {
+            "mail.folders.list": ("list_folders", "mail:read"),
+            "mail.messages.move": ("move_message", "mail:write"),
+        }
+        for route_name, (operation, scope) in expected.items():
+            with self.subTest(route_name=route_name):
+                route = routes[route_name]
+                self.assertEqual(route["backend"], "yandex-mail")
+                self.assertEqual(route["transport"], "yandex-mail")
+                self.assertEqual(route["operation"], operation)
+                self.assertEqual(route["scope"], scope)
 
     def test_tool_audit_runtime_is_centralized(self) -> None:
         offenders = []

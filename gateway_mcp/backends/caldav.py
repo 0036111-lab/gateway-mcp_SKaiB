@@ -79,6 +79,37 @@ def _caldav_sync(operation: str, arguments: dict[str, Any], username: str, passw
             },
         }
 
+    if operation == "create_event":
+        calendar_index = int(arguments.get("calendar_index") or 0)
+        if calendar_index < 0 or calendar_index >= len(calendars):
+            raise BackendRouteError(f"Calendar index out of range: {calendar_index}")
+        summary = str(arguments.get("summary") or "").strip()
+        if not summary:
+            raise BackendRouteError("calendar.events.create requires summary")
+        start = _parse_datetime(arguments.get("start"), datetime.now() + timedelta(hours=1))
+        end = _parse_datetime(arguments.get("end"), start + timedelta(hours=1))
+        if end <= start:
+            raise BackendRouteError("calendar.events.create requires end after start")
+        description = str(arguments.get("description") or "")
+        location = str(arguments.get("location") or "")
+        attendee = str(arguments.get("attendee") or "").strip()
+        extra: dict[str, Any] = {}
+        if attendee:
+            extra["attendee"] = [attendee]
+        event = calendars[calendar_index].save_event(
+            dtstart=start,
+            dtend=end,
+            summary=summary,
+            description=description,
+            location=location,
+            **extra,
+        )
+        return {
+            "ok": True,
+            "backend": "caldav",
+            "data": {"event": _serialize_calendar_event(event)},
+        }
+
     if operation != "search_events":
         raise BackendRouteError(f"Unsupported CalDAV operation: {operation or '<missing>'}")
 

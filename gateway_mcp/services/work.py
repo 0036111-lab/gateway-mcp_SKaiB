@@ -222,13 +222,6 @@ def claim_work(
         project_id=_text(project_id, 200),
         lease_seconds=lease_seconds,
     )
-    if row:
-        storage_work.insert_work_event(
-            work_id=row["work_id"],
-            actor_subject=actor.subject,
-            event_type="claimed",
-            payload={"lease_seconds": max(60, min(int(lease_seconds), 86400))},
-        )
     return row
 
 
@@ -253,6 +246,11 @@ def record_event(
         expected_statuses = {"running", "review"}
     elif event_type == "resumed":
         factory_work = str(row.get("execution_mode") or "").casefold() == "factory"
+        if factory_work:
+            from gateway_mcp.services import storage_factory
+
+            if storage_factory.get_project(str(row.get("project_id") or "")):
+                raise ValueError("registered Factory projects require gateway_work_retry")
         updates["status"] = "queued" if factory_work else "running"
         if factory_work:
             updates["claimed_by"] = ""
@@ -592,7 +590,9 @@ def _artifact_digest(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _safe_metadata(values: dict[str, Any]) -> dict[str, Any]:
+def _safe_metadata(values: dict[str, Any], *, depth: int = 0) -> dict[str, Any]:
+    if depth >= 8:
+        return {"truncated": True}
     safe: dict[str, Any] = {}
     for raw_key, value in list(values.items())[:50]:
         key = _text(raw_key, 80)
@@ -608,16 +608,32 @@ def _safe_metadata(values: dict[str, Any]) -> dict[str, Any]:
                 "authorization",
                 "prompt",
                 "content",
+                "credential",
+                "connection_id",
+                "connection_handle",
             )
         ):
             safe[key] = "[redacted]"
         elif isinstance(value, (str, int, float, bool)) or value is None:
             safe[key] = _text(value, 500) if isinstance(value, str) else value
         elif isinstance(value, list):
-            safe[key] = [_text(item, 200) for item in value[:25]]
+            safe[key] = _safe_metadata_list(value, depth + 1)
+        elif isinstance(value, dict):
+            safe[key] = _safe_metadata(value, depth=depth + 1)
         else:
             safe[key] = _text(value, 500)
     return safe
+
+
+def _safe_metadata_list(values: list[Any], depth: int) -> list[Any]:
+    if depth >= 8:
+        return ["[truncated]"]
+    return [
+        _safe_metadata(item, depth=depth + 1) if isinstance(item, dict)
+        else _safe_metadata_list(item, depth + 1) if isinstance(item, list)
+        else _text(item, 200)
+        for item in values[:25]
+    ]
 
 
 def _tracker_completion_policy(values: dict[str, Any]) -> dict[str, Any]:

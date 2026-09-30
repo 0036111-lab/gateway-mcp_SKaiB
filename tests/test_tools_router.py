@@ -260,7 +260,7 @@ class RouterToolTests(unittest.TestCase):
             ),
             patch(
                 "gateway_mcp.tools.router.current_actor",
-                return_value=GatewayActor(subject="service:fyokla"),
+                return_value=GatewayActor(subject="service:notifier"),
             ),
             patch(
                 "gateway_mcp.tools.router.require_resource_access",
@@ -307,7 +307,7 @@ class RouterToolTests(unittest.TestCase):
             ),
             patch(
                 "gateway_mcp.tools.router.current_actor",
-                return_value=GatewayActor(subject="service:fyokla"),
+                return_value=GatewayActor(subject="service:notifier"),
             ),
             patch(
                 "gateway_mcp.tools.router.require_resource_access",

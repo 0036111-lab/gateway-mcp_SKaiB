@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from gateway_mcp.config import factory_projects_file, read_json
+from gateway_mcp.services import storage_factory
 
 
 def load_factory_project_registry(path: Path | None = None) -> dict[str, Any]:
@@ -12,13 +13,23 @@ def load_factory_project_registry(path: Path | None = None) -> dict[str, Any]:
         return {"projects": [], "queue_fallback": {}}
     projects = data.get("projects")
     fallback = data.get("queue_fallback")
-    return {
+    result = {
         "schema_version": str(data.get("schema_version") or "1.0"),
         "projects": [dict(item) for item in projects if isinstance(item, dict)]
         if isinstance(projects, list)
         else [],
         "queue_fallback": dict(fallback) if isinstance(fallback, dict) else {},
     }
+    if path is None:
+        stored = {
+            row["project_id"]: dict(row["config"])
+            for row in storage_factory.list_projects()
+        }
+        result["projects"] = [
+            item for item in result["projects"] if item.get("project_id") not in stored
+        ]
+        result["projects"] = list(stored.values()) + result["projects"]
+    return result
 
 
 def tracker_project_identity(issue: dict[str, Any]) -> dict[str, str]:

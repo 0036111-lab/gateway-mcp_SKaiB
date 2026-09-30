@@ -199,7 +199,9 @@ def is_user_allowed(user_info: dict[str, Any]) -> bool:
     return _matches_allowed_domain(email, allowed_domains)
 
 
-def actor_from_user_info(user_info: dict[str, Any]) -> GatewayActor:
+def actor_from_user_info(
+    user_info: dict[str, Any], *, include_database_grants: bool = True
+) -> GatewayActor:
     policy = _read_policy()
     users = policy.get("users", {})
     matched_user: dict[str, Any] = {}
@@ -219,14 +221,15 @@ def actor_from_user_info(user_info: dict[str, Any]) -> GatewayActor:
     login = str(user_info.get("login") or "")
     email = str(user_info.get("default_email") or user_info.get("email") or "")
     subject = f"yandex:{yandex_id or login or email}"
-    _apply_database_scope_grants(
-        scopes,
-        subject=subject,
-        email=email,
-        login=login,
-        yandex_id=yandex_id,
-        groups=groups,
-    )
+    if include_database_grants:
+        _apply_database_scope_grants(
+            scopes,
+            subject=subject,
+            email=email,
+            login=login,
+            yandex_id=yandex_id,
+            groups=groups,
+        )
 
     return GatewayActor(
         subject=subject,

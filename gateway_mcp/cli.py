@@ -34,7 +34,18 @@ def main() -> None:
     notification_parser.add_argument("--once", action="store_true")
     notification_parser.add_argument("--poll-seconds", type=float, default=None)
     notification_parser.add_argument("--batch-size", type=int, default=None)
+    connection_parser = subparsers.add_parser("factory-connection", help="Provision an encrypted Factory GitLab connection locally")
+    connection_parser.add_argument("--id", required=True)
+    connection_parser.add_argument("--api-url", required=True)
+    connection_parser.add_argument("--username", default="oauth2")
     args = parser.parse_args()
+    if args.command == "factory-connection":
+        from getpass import getpass
+        from gateway_mcp.services.factory_readiness import provision_connection
+
+        provision_connection(args.id, args.api_url, args.username, getpass("GitLab token: "))
+        print(json.dumps({"ok": True, "configured": True}))
+        return
     if args.command == "migrate":
         result = migrate_up() if args.action == "up" else check_current()
         print(json.dumps(result, ensure_ascii=False, indent=2))

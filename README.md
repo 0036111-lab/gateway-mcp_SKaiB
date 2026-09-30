@@ -51,6 +51,16 @@ curl http://localhost:8000/healthz
 The MCP endpoint is served at `/mcp`. Host it behind HTTPS and set `GATEWAY_PUBLIC_URL` for a working OAuth flow. Security policy: [SECURITY.md](SECURITY.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). License: Apache-2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE)).
 
 ---
+
+For persistent Factory project registration, multi-instance GitLab credentials,
+readiness probes and explicit Work retry, see [Factory project administration](docs/factory-project-registry.md).
+
+Factory GitLab service connections are managed at `/admin/factory/connections`:
+create/rotate a token, restrict repositories, test authentication and bind a registered
+project. Agents discover permitted aliases with `gateway_factory_connections_list`.
+The opt-in Gateway Git transport keeps upstream tokens on the server and limits
+push to the active Work branch; rollout and worker commands are in the same guide.
+
 ## User Flow
 
 Claude Code uses MCP OAuth directly:
@@ -142,7 +152,7 @@ python -m gateway_mcp.smoke --base-url https://gateway.example.com --token "$GAT
 - `gateway_project_scope_resolve(project_id, signal_summary, scope_id, limit)` - return source-backed project/scope candidates for agent classification. Scope: `factory:read`.
 - `gateway_work_intake(...)` - create a portable local or factory Work Contract. Scope: `factory:write` plus project resource access.
 - `gateway_work_search(...)` / `gateway_work_get(work_id)` - inspect authorized work metadata and evidence. Scope: `factory:read` plus project resource access.
-- `gateway_work_claim(work_id, project_id, lease_seconds)` - atomically claim queued factory work. Scope: `factory:claim` plus project write access.
+- `gateway_work_claim(work_id, project_id, lease_seconds)` - reserve queued Factory work and validate registered project readiness before admitting the lease. Returns `claimed: false` if preflight blocks the Work. Scope: `factory:claim` plus project write access. See [claim preflight and rollout](docs/factory-project-registry.md#claim-preflight).
 - `gateway_work_artifact_record(...)` - append one metadata-only planning, implementation, verification, review, delivery, or production-feedback record to the server-validated SHA-256 artifact chain. Scope: `factory:write` plus project resource access.
 - `gateway_work_event(...)` / `gateway_work_complete(...)` / `gateway_work_accept(...)` - record phase changes, verified result, and independent review decision. Scope: `factory:write` plus project resource access.
 - `gateway_work_metrics(project_id, days)` - compare local and factory flow on signal-to-result, acceptance, blocking, correction, evidence, and administration. The response includes `blocked_rate` and the canonical `p50_correction_rounds`; `avg_correction_rounds` remains available for compatibility. Scope: `factory:read` plus project resource access.
@@ -493,6 +503,7 @@ Platform administrators manage global service connections at `/admin/integration
 - `GATEWAY_MCP_CATALOG_TTL_MS` - private cache hint for MCP discovery and catalog results, default `300000`.
 - `GATEWAY_CIMD_ENABLED` - advertises and accepts OAuth Client ID Metadata Documents when `true`. Default `false`, so MCP clients use the declared dynamic registration endpoint. Enable only when client metadata URLs are reliably reachable from the Gateway.
 - `GATEWAY_CIMD_ALLOWED_HOSTS` - optional comma-separated allowlist for OAuth Client ID Metadata Document hosts when CIMD is enabled. Private and local addresses are always rejected.
+- `GATEWAY_OAUTH_ALLOWED_CUSTOM_SCHEMES` - optional comma-separated allowlist for native-client callback schemes used during dynamic OAuth registration. Set it to `cursor` to accept Cursor's `cursor://anysphere.cursor-mcp/oauth/callback`; HTTPS and HTTP loopback callbacks remain accepted without this setting.
 - `GATEWAY_IDEMPOTENCY_TTL_SECONDS` - retention period for write-call idempotency records, default `86400`.
 - `GATEWAY_MANAGED_CONNECTION_CACHE_SECONDS` - runtime cache for decrypted managed service connections, default `5` seconds.
 - `GATEWAY_FILE_TRANSFER_DIR` - private server directory for short-lived binary transfers, default `/data/gateway/files`. Docker Compose mounts the persistent `gateway-files` volume there.
@@ -660,6 +671,39 @@ Runtime code does not create or alter application tables. Run `gateway-mcp migra
 The Docker Compose file starts Postgres 16 and wires `GATEWAY_DATABASE_URL` automatically.
 
 ## Access Control
+
+### Browser Administration
+
+Platform administrators can open `/admin` after Gateway OAuth login. The console
+uses the same navigation and visual style as integrations, audit and telemetry.
+All console pages require `access:admin`.
+
+- `/admin` shows database health, full pending/processing request counts,
+  known Gateway users, errors/denials over 24 hours and integration configuration.
+  A configured integration is not necessarily healthy; its last check remains
+  available on `/admin/integrations`.
+- `/admin/access-requests` is the employee request queue, with status/package
+  filters, employee/request search and 25-row pagination.
+- Open a request, check its recipient, package version, scopes, resource patterns
+  and TTL, enter a reason, then choose approve or reject. This first step is a
+  dry-run. Review the preview and explicitly confirm before a decision is applied.
+- Confirmation is signed, bound to the administrator, CSRF cookie, decision and
+  current preview, and expires after ten minutes. Changed or completed requests
+  cannot reuse a preview. A changed package requires a new employee request.
+- A different administrator must decide the request: self-decisions are rejected
+  in the shared service, including calls made through MCP. Existing package
+  version checks and atomic request claiming remain in force.
+- `/admin/users` lists identities known from base Yandex login records and access
+  requests, not the entire HR directory. Employee cards show direct package,
+  scope and resource assignments, expiry/revocation and request history. These
+  direct assignments are not a complete effective-access calculation: policy
+  groups, token scopes and resource policy also affect access. Use
+  `gateway_admin_explain_access` for a concrete operation.
+
+The console does not expose credential payloads, does not send decisions to
+external systems, and records preview/decision events in the audit journal.
+No new database migration, frontend build or environment setting is required;
+the existing access-request migration must already be applied.
 
 GatewayMCP has two access layers:
 
@@ -849,6 +893,33 @@ Use `gateway_company_get_source_of_truth` to understand where a fact should come
 Do not maintain a parallel company registry in Git. GatewayMCP stores memory and audit state, but company facts stay in Yonote and the operational systems listed above.
 
 ## Observability
+
+The admin metrics workspace is available at `/admin/metrics` to users with
+`access:admin`. Business is the default view:
+
+| View | Source | Measures |
+| --- | --- | --- |
+| Business | Confirmed project-to-deal links in Postgres, Bitrix24 CRM amounts, Tracker worklogs and provisional planning rates | Contracted volume by currency, estimated logged labor, and balance after logged labor; never reported as final profit |
+| Projects | Gateway Work Contract ledger | Intake, acceptance, blocked and open work, first-pass acceptance, median time to verification and acceptance |
+| Project deadlines | Tracker project selected on the Projects view | Open and overdue tasks, deadlines within seven days, paused tasks, unassigned and stale tasks |
+| Sales | Bitrix24 deals | Active deals by stage and currency, new deals, stale deals, deals without amount or next step |
+| Gateway | Postgres audit journal and live Prometheus counters | Tool calls, failures, denials, active actors, login events, latency, memory and privacy events |
+| Agents | Assistant usage telemetry | Model, token and cost reports grouped by data quality; skill usage remains at `/admin/telemetry/skills` |
+
+Tracker data requires the administrator's Yandex OAuth credential and
+`tracker:read`; sales data requires `bitrix24:read` and a working Bitrix24
+integration. The Business view needs both scopes. Its input assumptions, setup and
+known gaps are documented in [business economics](docs/business-economics.md).
+Select a registered logical project to use its Tracker project ID,
+or enter a Tracker project ID directly. Tracker counts include tasks from all
+queues whose *primary* project matches the selected ID. Bitrix24 amounts remain
+separate by currency. The UI shows sample coverage when pagination hits its
+limit, and displays unavailable fields as missing rather than zero. Yonote
+risks, milestones and decisions are not yet structured into these counts.
+
+The audit and Work Contract views use the selected time window. Current
+Tracker and active-deal figures are point-in-time snapshots. Prometheus
+counters reflect the current Gateway process since its last start.
 
 Prometheus metrics:
 

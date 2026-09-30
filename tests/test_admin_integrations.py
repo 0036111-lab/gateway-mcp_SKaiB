@@ -98,6 +98,53 @@ class AdminIntegrationRouteTests(unittest.TestCase):
         self.assertNotIn("must-not-render", response.body)
         self.assertNotIn("top-secret", response.body)
 
+    def test_optional_missing_is_not_an_issue_and_unchecked_is_not_verified(
+        self,
+    ) -> None:
+        from gateway_mcp.routes.admin_integrations import (
+            register_admin_integration_routes,
+        )
+        from gateway_mcp.services.policy import GatewayActor
+
+        fake = FakeMcp()
+        register_admin_integration_routes(fake)
+        statuses = [
+            {
+                "system": "bitrix24",
+                "state": "active",
+                "source": "environment",
+                "last_check_ok": None,
+            },
+            {
+                "system": "gitlab",
+                "state": "missing",
+                "source": "missing",
+                "last_check_ok": None,
+            },
+        ]
+        with (
+            patch(
+                "gateway_mcp.routes.admin_integrations.web_actor",
+                return_value=GatewayActor(subject="admin", scopes=("access:admin",)),
+            ),
+            patch(
+                "gateway_mcp.routes.admin_integrations.integration_statuses",
+                return_value=statuses,
+            ),
+            patch(
+                "gateway_mcp.routes.admin_integrations.safe_field_value",
+                return_value="",
+            ),
+        ):
+            response = asyncio.run(
+                fake.routes["/admin/integrations"]["func"](FakeRequest())
+            )
+        self.assertIn("Настроено", response.body)
+        self.assertIn("не настроено", response.body)
+        self.assertIn("Требуют внимания", response.body)
+        self.assertIn('<span class="status neutral">не настроено</span>', response.body)
+        self.assertNotIn('<span class="status ok">работает</span>', response.body)
+
 
 if __name__ == "__main__":
     unittest.main()

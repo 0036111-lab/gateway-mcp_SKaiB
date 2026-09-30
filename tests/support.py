@@ -171,8 +171,12 @@ def install_dependency_stubs() -> None:
             pass
 
         class RedirectResponse(Response):
-            def __init__(self, url: str, status_code: int = 307) -> None:
-                super().__init__(None, status_code=status_code)
+            def __init__(self, url: str, status_code: int = 307, headers=None) -> None:
+                super().__init__(
+                    None,
+                    status_code=status_code,
+                    headers={"location": url, **(headers or {})},
+                )
                 self.url = url
 
         class HTMLResponse(Response):

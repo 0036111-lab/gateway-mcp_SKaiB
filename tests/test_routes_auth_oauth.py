@@ -861,6 +861,34 @@ class AuthOAuthRouteTests(unittest.TestCase):
                 {"redirect_uris": ["http://example.com/oauth/callback"]}
             )
 
+    def test_dynamic_registration_accepts_allowlisted_cursor_redirect(self) -> None:
+        from gateway_mcp.services import auth
+
+        redirect_uris = [
+            "cursor://anysphere.cursor-mcp/oauth/callback",
+            "https://www.cursor.com/agents/mcp/oauth/callback",
+            "http://localhost:8787/callback",
+        ]
+        with patch.dict(
+            "os.environ",
+            {"GATEWAY_OAUTH_ALLOWED_CUSTOM_SCHEMES": "cursor"},
+            clear=True,
+        ):
+            client = auth.register_oauth_client({"redirect_uris": redirect_uris})
+
+        self.assertEqual(client["redirect_uris"], redirect_uris)
+
+    def test_dynamic_registration_rejects_cursor_redirect_by_default(self) -> None:
+        from gateway_mcp.services import auth
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            self.assertRaisesRegex(ValueError, "HTTPS"),
+        ):
+            auth.register_oauth_client(
+                {"redirect_uris": ["cursor://anysphere.cursor-mcp/oauth/callback"]}
+            )
+
     def test_mcp_auth_metadata_uses_supported_scopes(self) -> None:
         from gateway_mcp.services import auth
 

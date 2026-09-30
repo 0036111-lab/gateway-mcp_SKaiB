@@ -3,9 +3,9 @@ import json
 from mcp.types import ToolAnnotations
 
 from gateway_mcp.config import read_json, tools_file
+from gateway_mcp.services.factory_preflight import claim_with_preflight
 from gateway_mcp.services.work import (
     accept_work,
-    claim_work,
     complete_work,
     get_work,
     intake_work,
@@ -164,14 +164,18 @@ def register_work_tools(mcp):
         )
         try:
             actor = run.require_scope()
-            result = claim_work(
+            result = await claim_with_preflight(
                 actor=actor,
                 work_id=work_id,
                 project_id=project_id,
                 lease_seconds=lease_seconds,
             )
             run.finish()
-            return _json({"ok": True, "claimed": bool(result), "work": result})
+            return _json({
+                "ok": True,
+                "claimed": bool(result and result.get("status") == "running"),
+                "work": result,
+            })
         except PermissionError as exc:
             run.denied(exc)
             raise
