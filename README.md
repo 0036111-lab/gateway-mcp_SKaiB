@@ -515,8 +515,16 @@ Platform administrators manage global service connections at `/admin/integration
 - `GATEWAY_PRIVACY_TERMS_FILE` - optional JSON file containing company-specific terms to pseudonymize, for example employee, client, project, or contract names.
 - `GATEWAY_LLM_UPSTREAM_URL`, `GATEWAY_LLM_UPSTREAM_API_KEY` - OpenAI-compatible provider used only behind the privacy proxy. These values can be stored at `/admin/integrations` instead of the environment.
 - `GATEWAY_LLM_DEFAULT_MODEL`, `GATEWAY_LLM_ALLOWED_MODELS` - optional default model and comma-separated model allowlist for the privacy proxy.
+- `GATEWAY_MODEL_ROUTING_FILE` - JSON policy that maps a workflow stage to a model profile and autonomous-execution guardrails. The packaged default is `gateway-model-routing.json`.
+- `GATEWAY_MODEL_CHEAP_FAST`, `GATEWAY_MODEL_BALANCED`, `GATEWAY_MODEL_STRONG_REASONING`, `GATEWAY_MODEL_STRONG_WRITING` - provider model ids assigned to the default routing profiles. They are deliberately deployment configuration, not skill content.
 - `GATEWAY_LLM_PROXY_MAX_BODY_BYTES`, `GATEWAY_LLM_PROXY_TIMEOUT_SECONDS` - proxy request size and upstream timeout limits, default `4194304` bytes and `180` seconds.
 - `GATEWAY_LLM_ALLOW_INSECURE_UPSTREAM` - permits an HTTP upstream for an explicitly trusted internal model endpoint. Default `false`; external providers must use HTTPS.
+
+### Workflow model routing
+
+Clients opt into policy routing by sending `X-Gateway-Workflow`, `X-Gateway-Stage`, and `X-Gateway-Execution-Mode` (`interactive` or `autonomous`) to `/privacy/v1/chat/completions` or `/privacy/v1/responses`. Gateway replaces a caller-selected model with the configured profile model, caps output tokens, records the workflow/profile in the redacted audit event, and rejects autonomous execution for human-gated stages. Stages marked `deterministic` are rejected at the LLM boundary and must use regular GatewayMCP tools.
+
+The initial `skaib-outreach` policy keeps external research, final draft creation, and sending behind explicit human gates. Sending is deterministic and is never delegated to an LLM.
 - `GATEWAY_MEMORY_SHORT_TTL_DAYS` - default TTL for short-term session/task memory, default `7`.
 - `GATEWAY_MEMORY_MEDIUM_TTL_DAYS` - default TTL for medium-term project/team memory, default `90`.
 - `GATEWAY_MEMORY_MAX_TTL_DAYS` - maximum TTL accepted by memory writes, default `365`.

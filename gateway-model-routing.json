@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "profiles": {
+    "cheap-fast": {
+      "model_env": "GATEWAY_MODEL_CHEAP_FAST",
+      "max_output_tokens": 1200
+    },
+    "balanced": {
+      "model_env": "GATEWAY_MODEL_BALANCED",
+      "max_output_tokens": 2400
+    },
+    "strong-reasoning": {
+      "model_env": "GATEWAY_MODEL_STRONG_REASONING",
+      "max_output_tokens": 4000
+    },
+    "strong-writing": {
+      "model_env": "GATEWAY_MODEL_STRONG_WRITING",
+      "max_output_tokens": 3000
+    }
+  },
+  "workflows": {
+    "skaib-outreach": {
+      "stages": {
+        "completeness_check": {
+          "profile": "cheap-fast",
+          "autonomous_allowed": true
+        },
+        "data_normalization": {
+          "profile": "cheap-fast",
+          "autonomous_allowed": true
+        },
+        "internal_search": {
+          "deterministic": true,
+          "autonomous_allowed": true
+        },
+        "external_research": {
+          "profile": "balanced",
+          "autonomous_allowed": false,
+          "human_approval_required": true
+        },
+        "company_space_match": {
+          "profile": "strong-reasoning",
+          "autonomous_allowed": true
+        },
+        "candidate_ranking": {
+          "profile": "balanced",
+          "autonomous_allowed": true
+        },
+        "contact_verification": {
+          "deterministic": true,
+          "autonomous_allowed": true
+        },
+        "draft_email": {
+          "profile": "strong-writing",
+          "autonomous_allowed": false,
+          "human_approval_required": true
+        },
+        "draft_fact_check": {
+          "profile": "balanced",
+          "autonomous_allowed": true
+        },
+        "reply_classification": {
+          "profile": "cheap-fast",
+          "autonomous_allowed": true
+        },
+        "send_email": {
+          "deterministic": true,
+          "autonomous_allowed": false,
+          "human_approval_required": true
+        }
+      }
+    }
+  }
+}

@@ -157,6 +157,72 @@ class LlmProxyRouteTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 401)
 
+    def test_workflow_headers_select_model_profile_and_cap_tokens(self) -> None:
+        from gateway_mcp.routes import llm_proxy
+        from gateway_mcp.services.model_router import ModelRoute
+
+        fake = FakeMcp()
+        llm_proxy.register_llm_proxy_routes(fake)
+        captured = {}
+
+        async def upstream(_path, payload):
+            captured["payload"] = payload
+            return FakeUpstream({"choices": []})
+
+        route = ModelRoute(
+            workflow="skaib-outreach",
+            stage="reply_classification",
+            profile="cheap-fast",
+            model="provider/fast",
+            max_output_tokens=100,
+            autonomous_allowed=True,
+            human_approval_required=False,
+        )
+        request = FakeRequest(
+            {"model": "caller/expensive", "max_tokens": 999, "messages": []},
+            headers={
+                "x-gateway-workflow": "skaib-outreach",
+                "x-gateway-stage": "reply_classification",
+                "x-gateway-execution-mode": "autonomous",
+            },
+        )
+        with (
+            patch.object(llm_proxy, "auth_enabled", return_value=False),
+            patch.object(llm_proxy, "resolve_model_route", return_value=route),
+            patch.object(llm_proxy, "_upstream_post", side_effect=upstream),
+            patch.object(llm_proxy, "integration_value", return_value=""),
+            patch.object(llm_proxy, "audit_event"),
+        ):
+            response = asyncio.run(
+                fake.routes["/privacy/v1/chat/completions"]["func"](request)
+            )
+
+        self.assertEqual(captured["payload"]["model"], "provider/fast")
+        self.assertEqual(captured["payload"]["max_tokens"], 100)
+        self.assertEqual(response.headers["X-Gateway-Model-Profile"], "cheap-fast")
+
+    def test_service_identity_cannot_claim_interactive_mode(self) -> None:
+        from gateway_mcp.routes import llm_proxy
+        from gateway_mcp.services.policy import GatewayActor
+
+        request = FakeRequest(
+            {"messages": []},
+            headers={
+                "x-gateway-workflow": "skaib-outreach",
+                "x-gateway-stage": "draft_email",
+                "x-gateway-execution-mode": "interactive",
+            },
+        )
+        with self.assertRaisesRegex(
+            llm_proxy.ModelRoutingError, "service identities"
+        ):
+            llm_proxy._model_route_from_request(
+                request,
+                {},
+                actor=GatewayActor(subject="service:hermes-outreach"),
+                api="responses",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

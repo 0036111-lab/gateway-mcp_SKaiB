@@ -19,6 +19,12 @@ from gateway_mcp.services.auth import (
     decode_gateway_token,
 )
 from gateway_mcp.services.managed_integrations import integration_value
+from gateway_mcp.services.model_router import (
+    ModelRoute,
+    ModelRoutingError,
+    apply_model_route,
+    resolve_model_route,
+)
 from gateway_mcp.services.observability import (
     audit_event,
     observe_llm_proxy_request,
@@ -83,7 +89,9 @@ async def _proxy_completion(request: Request, *, api: str) -> Response:
         policy = normalize_policy(
             str(request.headers.get("x-gateway-privacy-policy") or "")
         )
-        _set_default_model(payload)
+        model_route = _model_route_from_request(request, payload, actor=actor, api=api)
+        if model_route is None:
+            _set_default_model(payload)
         _require_allowed_model(str(payload.get("model") or ""))
         client_stream = bool(payload.get("stream"))
         protected = sanitize_llm_request(
@@ -98,7 +106,7 @@ async def _proxy_completion(request: Request, *, api: str) -> Response:
         outbound["user"] = _actor_identifier(actor.subject)
         if "safety_identifier" in outbound:
             outbound["safety_identifier"] = _actor_identifier(actor.subject)
-    except (TypeError, ValueError) as exc:
+    except (ModelRoutingError, TypeError, ValueError) as exc:
         return _error(400, "invalid_request", str(exc), request_id=request_id)
 
     _audit(
@@ -109,6 +117,7 @@ async def _proxy_completion(request: Request, *, api: str) -> Response:
         status="ok",
         policy=policy,
         summary=protected.summary,
+        model_route=model_route,
     )
     observe_privacy_summary(surface="llm_request", summary=protected.summary.as_dict())
     started = time.perf_counter()
@@ -177,11 +186,20 @@ async def _proxy_completion(request: Request, *, api: str) -> Response:
         policy=policy,
         summary=restored.summary,
         duration_ms=int((time.perf_counter() - started) * 1000),
+        model_route=model_route,
     )
     duration_ms = int((time.perf_counter() - started) * 1000)
     observe_privacy_summary(surface="llm_response", summary=restored.summary.as_dict())
     observe_llm_proxy_request(api=api, status="ok", duration_ms=duration_ms)
     headers = {**_safe_headers(), "X-Gateway-Request-Id": request_id}
+    if model_route is not None:
+        headers.update(
+            {
+                "X-Gateway-Model-Profile": model_route.profile,
+                "X-Gateway-Workflow": model_route.workflow,
+                "X-Gateway-Stage": model_route.stage,
+            }
+        )
     if client_stream:
         events = (
             _chat_events(restored.value)
@@ -220,6 +238,41 @@ def _set_default_model(payload: dict[str, Any]) -> None:
     if not model:
         raise ValueError("model is required")
     payload["model"] = model
+
+
+def _model_route_from_request(
+    request: Request,
+    payload: dict[str, Any],
+    *,
+    actor: GatewayActor,
+    api: str,
+) -> ModelRoute | None:
+    workflow = str(request.headers.get("x-gateway-workflow") or "").strip()
+    stage = str(request.headers.get("x-gateway-stage") or "").strip()
+    if not workflow and not stage:
+        return None
+    if not workflow or not stage:
+        raise ModelRoutingError(
+            "x-gateway-workflow and x-gateway-stage must be provided together"
+        )
+    execution_mode = str(
+        request.headers.get("x-gateway-execution-mode") or "interactive"
+    ).strip().casefold()
+    if execution_mode not in {"interactive", "autonomous"}:
+        raise ModelRoutingError(
+            "x-gateway-execution-mode must be interactive or autonomous"
+        )
+    if actor.subject.startswith("service:") and execution_mode != "autonomous":
+        raise ModelRoutingError(
+            "service identities must use autonomous execution mode"
+        )
+    route = resolve_model_route(
+        workflow,
+        stage,
+        autonomous=execution_mode == "autonomous",
+    )
+    apply_model_route(payload, route, api=api)
+    return route
 
 
 def _require_allowed_model(model: str) -> None:
@@ -482,6 +535,7 @@ def _audit(
     summary: PrivacySummary | None = None,
     duration_ms: int = 0,
     error: str = "",
+    model_route: ModelRoute | None = None,
 ) -> None:
     audit_event(
         event="llm_privacy_proxy",
@@ -497,6 +551,9 @@ def _audit(
             "policy": policy,
             "duration_ms": duration_ms,
             "privacy": summary.as_dict() if summary else {},
+            "workflow": model_route.workflow if model_route else "",
+            "stage": model_route.stage if model_route else "",
+            "model_profile": model_route.profile if model_route else "",
         },
         error=error,
     )

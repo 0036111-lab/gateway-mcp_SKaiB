@@ -40,6 +40,13 @@ def factory_projects_file() -> Path:
     )
 
 
+def model_routing_file() -> Path:
+    return resolve_configured_path(
+        "GATEWAY_MODEL_ROUTING_FILE",
+        "gateway-model-routing.json",
+    )
+
+
 def read_json(path: Path, fallback: Any) -> Any:
     if not path.exists():
         return fallback
