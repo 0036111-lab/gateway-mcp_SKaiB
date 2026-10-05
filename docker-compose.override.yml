@@ -1,0 +1,7 @@
+services:
+  postgres:
+    restart: unless-stopped
+  gateway:
+    restart: unless-stopped
+  notification-worker:
+    restart: unless-stopped
