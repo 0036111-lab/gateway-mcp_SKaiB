@@ -38,6 +38,19 @@ class IntegrationDefinition:
 
 
 INTEGRATIONS: dict[str, IntegrationDefinition] = {
+    "metrapi": IntegrationDefinition(
+        key="metrapi",
+        label="Metrapi",
+        description="Агрегированная база объявлений недвижимости для внутреннего поиска объектов.",
+        fields=(
+            IntegrationField("METRAPI_API_KEY", "API-ключ", secret=True),
+            IntegrationField(
+                "METRAPI_BASE_URL",
+                "Адрес API",
+                default="https://api.metrapi.ru",
+            ),
+        ),
+    ),
     "bitrix24": IntegrationDefinition(
         key="bitrix24",
         label="Bitrix24",

@@ -27,6 +27,7 @@ from gateway_mcp.tools.factory import register_factory_tools
 from gateway_mcp.tools.files import register_file_tools
 from gateway_mcp.tools.knowledge import register_knowledge_tools
 from gateway_mcp.tools.memory import register_memory_tools
+from gateway_mcp.tools.metrapi import register_metrapi_tools
 from gateway_mcp.tools.notifications import register_notification_tools
 from gateway_mcp.tools.privacy import register_privacy_tools
 from gateway_mcp.tools.process import register_process_tools
@@ -59,6 +60,7 @@ def create_mcp():
     register_admin_telemetry_routes(server)
     register_company_tools(server)
     register_memory_tools(server)
+    register_metrapi_tools(server)
     register_notification_tools(server)
     register_knowledge_tools(server)
     register_process_tools(server)
